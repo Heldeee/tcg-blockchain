@@ -115,7 +115,13 @@ def main():
             assert nb_tez > sp.balance , "You can get more tez that the contract contains"
             sp.send(self.data.owner,nb_tez)
             
-
+        @sp.entrypoint
+        def add_card(self,card):
+            sp.cast(card,sp.record(title=sp.string, description=sp.string, rarety=sp.int))
+            assert sp.sender == self.data.owner , "You are not owner"
+            self.data.cards[self.data.nbcard] = card
+            self.data.nbcard += 1
+            
     class OracleRandom(sp.Contract):
         # add random number
         # list of oracle can modify this number 
@@ -162,6 +168,8 @@ def main():
             assert sp.now <= sp.add_seconds(sp.now, 10)
             return self.data.random
 
+        
+            
     class UserContract(sp.Contract):
 
         def __init__(self, tcgContract):
