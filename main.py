@@ -3,7 +3,7 @@ import smartpy as sp
 @sp.module
 def main():
 
-    joinTCG_type : type = sp.record(userAddress = sp.address, pseudonym = sp.string, cards = sp.big_map[sp.int,sp.unit], lastRedeemed = sp.timestamp)
+    joinTCG_type : type = sp.record(userAddress = sp.address, pseudonym = sp.string, cards = sp.big_map[sp.int,sp.int], lastRedeemed = sp.timestamp)
     generate_type : type = sp.address
     
     class TCGContract(sp.Contract):
@@ -41,7 +41,10 @@ def main():
                  random_index = sp.to_int(sp.mod((random_seed + i + self.data.action),self.data.nbcard))
                  card_id = self.data.cards.contains(random_index)
                  assert card_id , "Error occured with random value"
-                 player.cards[random_index] = ()
+                 if not player.cards.contains(random_index):
+                     player.cards[random_index] = 1
+                 else:
+                    player.cards[random_index] += 1
             self.data.users[player_address] = player
 
         @sp.entrypoint
@@ -57,7 +60,10 @@ def main():
                  random_index = sp.to_int(sp.mod((random_seed + i + self.data.action),self.data.nbcard))
                  card_id = self.data.cards.contains(random_index)
                  assert card_id , "Error occured with random value"
-                 player.cards[random_index] = ()
+                 if not player.cards.contains(random_index):
+                     player.cards[random_index] = 1
+                 else:
+                    player.cards[random_index] += 1
             self.data.users[player_address] = player
             
         @sp.onchain_view
@@ -100,7 +106,7 @@ def main():
             #check if user has enough tez + fee
             assert sp.amount == self.data.market[sellId].price + self.data.sellfee, "You must send the exact amount"
             #switch owner
-            self.data.users[userAddress].cards[self.data.market[sellId].cardId] = ()
+            self.data.users[userAddress].cards[self.data.market[sellId].cardId] = 1 # modify this to get the number of card of the user becaus we can have double
             # del from seller
             del self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId]
             # transfer tez
@@ -165,7 +171,7 @@ def main():
 
         @sp.onchain_view
         def get_random(self):
-            assert sp.now <= sp.add_seconds(sp.now, 10)
+            assert sp.now <= sp.add_seconds(self.data.last_updated, 10),"Problem with random oracle need to wait"
             return self.data.random
 
         
@@ -228,7 +234,8 @@ def test():
     scenario = sp.test_scenario("TezCG", main)
     alice = sp.test_account("alice").address
     bob = sp.test_account("bob").address
-
+    random = sp.test_account("random").address
+    
     scenario.h1("TezCG")
     c3 = main.OracleRandom(alice)
     c1 = main.TCGContract(alice,c3.address)
@@ -240,4 +247,16 @@ def test():
 
 
     c2.joinTCG("test",_sender=bob,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
-    #c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
+    c1.add_card(sp.record(title="Dragon de Feu", description="Capable de réduire ses ennemis en cendres en un souffle.", rarety=5), _sender=alice)
+    c1.add_card(sp.record(title="Golem de Pierre", description="Inébranlable et protecteur, une forteresse vivante.", rarety=3), _sender=alice)
+    c1.add_card(sp.record(title="Sorcier Sombre", description="Manipulateur des ombres, il inspire la peur.", rarety=4), _sender=alice)
+    c1.add_card(sp.record(title="Chevalier Divin", description="Un guerrier béni par les dieux eux-mêmes.", rarety=5), _sender=alice)
+    c1.add_card(sp.record(title="Loup Fantôme", description="Invisible la nuit, mais mortel au combat.", rarety=2), _sender=alice)
+    c1.add_card(sp.record(title="Archère Élémentaire", description="Maîtrise les flèches de feu, d'eau et de vent.", rarety=3), _sender=alice)
+    c1.add_card(sp.record(title="Revenant du Néant", description="Une entité qui revient sans cesse de l'oubli.", rarety=4), _sender=alice)
+    c1.add_card(sp.record(title="Mage du Temps", description="Peut ralentir ou accélérer le cours du temps.", rarety=5), _sender=alice)
+    c1.add_card(sp.record(title="Slime Ancien", description="Il semble faible, mais cache un pouvoir dévastateur.", rarety=1), _sender=alice)
+
+    c3.add_address_oracle(random,_sender=alice)
+    c3.modify_random(145456446650,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
+    c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
