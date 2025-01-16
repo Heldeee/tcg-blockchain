@@ -199,6 +199,7 @@ def main():
 
         @sp.entrypoint
         def sellCard(self, blockchainCardId, price):
+            # make call to the other contract
             pass
 
         @sp.entrypoint
