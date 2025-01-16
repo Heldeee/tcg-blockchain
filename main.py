@@ -9,10 +9,11 @@ def main():
         def __init__(self):
             self.data.cards = sp.big_map({}) # collection id
             sp.cast(self.data.cards,sp.big_map[sp.int, sp.record(title=sp.string, description=sp.string, rarety=sp.int)])
-            self.data.users= sp.big_map({}) #user's address, user's pseudonym, big map user's cards blockchain id, lastRedeemed
+            self.data.users = sp.big_map({}) #user's address, user's pseudonym, big map user's cards blockchain id, lastRedeemed
             self.data.trades = sp.big_map({}) # Trade id, 2 address, 2 card blockchain id, timer, boolean for accept
             self.data.market = sp.big_map({}) # Sell id, address seller, price, card blockchain id
             self.data.priceBooster = sp.tez(5)
+            self.data.sellFee = sp.tez(2)
 
         @sp.entrypoint
         def joinUser(self, user):
@@ -52,7 +53,7 @@ def main():
 
         @sp.entrypoint
         def sellCard(self, userAddress, blockchainCardId, price):
-            assert self.data.users[userAddress].cards[blockchainCardId], "User doesn't have this card"
+            assert self.data.users[userAddress].cards[blockchainCardId], "You don't have this card"
             self.data.market[blockchainCardId] = sp.record(
                 seller = userAddress,
                 price = price,
@@ -62,9 +63,15 @@ def main():
         @sp.entrypoint
         def buyCard(self, userAddress, sellId):
             #check if user has enough tez + fee
+            assert sp.amount == self.data.market[sellId].price + self.data.sellfee, "You must send the exact amount"
             #switch owner
+            self.data.users[userAddress].cards[self.data.market[sellId].cardId] = True
+            # del from seller
+            def self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId]
+            # transfer tez
+            sp.send(self.data.market[sellId].seller, sp.amount - self.data.sellfee)
             # remove from market
-            pass      
+            del self.data.market[sellId]
 
     class UserContract(sp.Contract):
 
@@ -91,6 +98,7 @@ def main():
 
         @sp.entrypoint
         def sellCard(self, id):
+            # make call to the other contract
             pass
 
         @sp.entrypoint
