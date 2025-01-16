@@ -4,6 +4,7 @@ import smartpy as sp
 def main():
 
     joinTCG_type : type = sp.record(userAddress = sp.address, pseudonym = sp.string, cards = sp.big_map[sp.int,sp.unit], lastRedeemed = sp.timestamp)
+    generate_type : type = sp.address
     
     class TCGContract(sp.Contract):
 
@@ -113,6 +114,7 @@ def main():
             assert sp.sender == self.data.owner , "You are not owner"
             assert nb_tez > sp.balance , "You can get more tez that the contract contains"
             sp.send(self.data.owner,nb_tez)
+            
 
     class OracleRandom(sp.Contract):
         # add random number
@@ -175,11 +177,13 @@ def main():
 
         @sp.entrypoint
         def buyBooster(self):
-            pass
+            tcgcontract = sp.contract(generate_type, self.data.TCGContract, entrypoint="generatePaidBooster").unwrap_some()
+            sp.transfer(sp.sender, sp.amount, tcgcontract)
 
         @sp.entrypoint
         def getFreeBooster(self):
-            pass
+            tcgcontract = sp.contract(generate_type, self.data.TCGContract, entrypoint="generateFreeBooster").unwrap_some()
+            sp.transfer(sp.sender, sp.tez(0), tcgcontract)
 
         @sp.entrypoint
         def sellCard(self, id):
@@ -215,6 +219,7 @@ def main():
 def test():
     scenario = sp.test_scenario("TezCG", main)
     alice = sp.test_account("alice").address
+    bob = sp.test_account("bob").address
 
     scenario.h1("TezCG")
     c3 = main.OracleRandom(alice)
@@ -224,3 +229,7 @@ def test():
     scenario += c1
     scenario += c2
     scenario += c3
+
+
+    c2.joinTCG("test",_sender=bob,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
+    #c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
