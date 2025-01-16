@@ -166,6 +166,7 @@ def main():
         def modify_random(self,random):
             assert self.data.autorize_address.contains(sp.sender) , "You can modify the random number"
             assert self.data.random != random , "It's the same number of the last random"
+            assert self.data.autorize_address[sp.sender] , "this Oracle it's deactivate for the moment you can modify this number"
             self.data.random = random
             self.data.last_updated = sp.now
 
