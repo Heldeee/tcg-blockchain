@@ -106,11 +106,15 @@ def main():
             #check if user has enough tez + fee
             assert sp.amount == self.data.market[sellId].price + self.data.sellfee, "You must send the exact amount"
             #switch owner
-            self.data.users[userAddress].cards[self.data.market[sellId].cardId] = 1 # modify this to get the number of card of the user becaus we can have double
+            self.data.users[userAddress].cards[self.data.market[sellId].cardId] += 1 # modify this to get the number of card of the user becaus we can have double
             # del from seller
-            del self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId]
+            if self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId] == 1:
+                del self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId]
+            else:
+                self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId] -= 1
             # transfer tez
             sp.send(self.data.market[sellId].seller, sp.amount - self.data.sellfee)
+            sp.send(self.data.owner, self.data.sellfee)
             # remove from market
             del self.data.market[sellId]
             
@@ -201,8 +205,14 @@ def main():
             sp.transfer(sp.sender, sp.tez(0), tcgcontract)
 
         @sp.entrypoint
-        def sellCard(self, id):
-            pass
+        def sellCard(self, id, price):
+            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
+            sp.transfer(sp.record(userAddress = sp.sender, blockchainCardId = id, price = price), sp.tez(0), tcgcontract)
+
+        @sp.entrypoint
+        def buyCard(self, id):
+            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="buyCard").unwrap_some()
+            sp.transfer(sp.record(userAddress = sp.sender, sellId = id), sp.tez(0), tcgcontract)
 
         @sp.entrypoint
         def askTrade(self, userAddress, askedBlockchainCardId, givenockchainCardId):
@@ -215,18 +225,6 @@ def main():
         @sp.entrypoint
         def declineTrade(self):
             pass
-
-        @sp.entrypoint
-        def sellCard(self, blockchainCardId, price):
-            # make call to the other contract
-            pass
-
-        @sp.entrypoint
-        def buyCard(self, blockchainCardId):
-            pass
-
-
-        
             
 
 
@@ -261,3 +259,8 @@ def test():
     c3.add_address_oracle(random,_sender=alice)
     c3.modify_random(145456446650,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
     c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
+
+    #test for selling / buying card
+    c2.sellCard(0,sp.tez(10),_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
+    c2.buyCard(0,_sender=alice,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
+    
