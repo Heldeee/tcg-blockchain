@@ -5,6 +5,8 @@ def main():
 
     joinTCG_type : type = sp.record(userAddress = sp.address, pseudonym = sp.string, cards = sp.big_map[sp.int,sp.int], lastRedeemed = sp.timestamp)
     generate_type : type = sp.address
+    sellCard_type : type = sp.record(userAddress = sp.address, blockchainCardId = sp.int, price = sp.mutez)
+    buyCard_type : type = sp.record(userAddress = sp.address, sellId = sp.int)
     
     class TCGContract(sp.Contract):
 
@@ -207,19 +209,16 @@ def main():
 
         @sp.entrypoint
         def sellCard(self, id, price):
-            # this don't work
-            """
-            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
-            sp.transfer(sp.record(userAddress = sp.sender, blockchainCardId = id, price = price), sp.tez(0), tcgcontract)
-            """
+            tcgcontract = sp.contract(sellCard_type, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
+            data = sp.record(userAddress = sp.sender, blockchainCardId = id, price = price)
+            sp.transfer(data, sp.tez(0), tcgcontract)
             
         @sp.entrypoint
         def buyCard(self, id):
-            # this don't work
-            """
-            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="buyCard").unwrap_some()
-            sp.transfer(sp.record(userAddress = sp.sender, sellId = id), sp.tez(0), tcgcontract)
-            """
+            tcgcontract = sp.contract(buyCard_type, self.data.TCGContract, entrypoint="buyCard").unwrap_some()
+            data = sp.record(userAddress = sp.sender, sellId = id)
+            sp.transfer(data, sp.tez(2), tcgcontract)
+
         @sp.entrypoint
         def askTrade(self, userAddress, askedBlockchainCardId, givenockchainCardId):
             pass
