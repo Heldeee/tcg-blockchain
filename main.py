@@ -14,9 +14,9 @@ def main():
             self.data.cards = sp.big_map({}) # collection id
             self.data.nbcard = 0
             sp.cast(self.data.cards,sp.big_map[sp.int, sp.record(title=sp.string, description=sp.string, rarety=sp.int)])
-            self.data.users= sp.big_map({}) #user's address, user's pseudonym, big map user's cards blockchain id, lastRedeemed
-            self.data.trades = sp.big_map({}) # Trade id, 2 address, 2 card blockchain id, timer, boolean for accept
-            self.data.market = sp.big_map({}) # Sell id, address seller, price, card blockchain id
+            self.data.users= sp.big_map({}) #user's address, user's pseudonym, big map user's cards id, lastRedeemed
+            self.data.trades = sp.big_map({}) # Trade id, 2 address, 2 card id, timer, boolean for accept
+            self.data.market = sp.big_map({}) # Sell id, address seller, price, card id
             self.data.priceBooster = sp.tez(5)
             self.data.action = 0
             self.data.sellfee = sp.tez(2)
@@ -67,15 +67,15 @@ def main():
             self.data.users[player_address] = player
             
         @sp.onchain_view
-        def getCardbyId(self, blockchainCardId):
-            return self.data.cards[blockchainCardId]
+        def getCardbyId(self, cardId):
+            return self.data.cards[cardId]
 
         @sp.onchain_view
         def getCardsbyUser(self, userAddress):
             return self.data.users[userAddress].cards
 
         @sp.entrypoint
-        def exchangeCard(self, userAddress1, userAddress2, blockchainCardId1, blockchainCardId2):
+        def exchangeCard(self, userAddress1, userAddress2, cardId1, cardId2):
             self.data.action +=1
             #call UI
             #add to trade big_map
@@ -91,13 +91,13 @@ def main():
             pass
 
         @sp.entrypoint
-        def sellCard(self, userAddress, blockchainCardId, price):
+        def sellCard(self, userAddress, cardId, price):
             self.data.action +=1
-            assert self.data.users[userAddress].cards.contains(blockchainCardId), "You don't have this card"
-            self.data.market[blockchainCardId] = sp.record(
+            assert self.data.users[userAddress].cards.contains(cardId), "You don't have this card"
+            self.data.market[cardId] = sp.record(
                 seller = userAddress,
                 price = price,
-                cardId = blockchainCardId
+                cardId = cardId
             )
 
         @sp.entrypoint
@@ -215,8 +215,9 @@ def main():
             sp.transfer(sp.record(userAddress = sp.sender, sellId = id), sp.tez(0), tcgcontract)
 
         @sp.entrypoint
-        def askTrade(self, userAddress, askedBlockchainCardId, givenockchainCardId):
-            pass
+        def askTrade(self, userAddress, askedCardId, givenCardId):
+            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="exchangeCard").unwrap_some()
+            sp.transfer(sp.record(userAddress1 = sp.sender, userAddress2 = userAddress, cardId1 = askedCardId, cardId2 = givenCardId), sp.tez(0), tcgcontract)
 
         @sp.entrypoint
         def acceptTrade(self):
