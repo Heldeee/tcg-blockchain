@@ -5,7 +5,7 @@ def main():
 
     joinTCG_type : type = sp.record(userAddress = sp.address, pseudonym = sp.string, cards = sp.big_map[sp.int,sp.int], lastRedeemed = sp.timestamp)
     generate_type : type = sp.address
-    sellCard_type : type = sp.record(userAddress = sp.address, blockchainCardId = sp.int, price = sp.mutez)
+    sellCard_type : type = sp.record(userAddress = sp.address, cardId = sp.int, price = sp.mutez)
     buyCard_type : type = sp.record(userAddress = sp.address, sellId = sp.int)
     
     class TCGContract(sp.Contract):
@@ -22,6 +22,7 @@ def main():
             self.data.priceBooster = sp.tez(5)
             self.data.action = 0
             self.data.sellfee = sp.tez(2)
+            self.data.sellId = 0
 
         @sp.entrypoint
         def joinUser(self, user):
@@ -51,7 +52,7 @@ def main():
             self.data.users[player_address] = player
 
         @sp.entrypoint
-        def generatePaidBooster(self,player_address):
+        def generatePaidBooster(self, player_address):
             self.data.action +=1
             # number that change for call every entrypoints on this contract + randomness oracle + maybe more
             assert self.data.users.contains(player_address), "You need to JoinTCg Before"
@@ -70,15 +71,15 @@ def main():
             self.data.users[player_address] = player
             
         @sp.onchain_view
-        def getCardbyId(self, blockchainCardId):
-            return self.data.cards[blockchainCardId]
+        def getCardbyId(self, cardId):
+            return self.data.cards[cardId]
 
         @sp.onchain_view
         def getCardsbyUser(self, userAddress):
             return self.data.users[userAddress].cards
 
         @sp.entrypoint
-        def exchangeCard(self, userAddress1, userAddress2, blockchainCardId1, blockchainCardId2):
+        def exchangeCard(self, userAddress1, userAddress2, cardId1, cardId2):
             self.data.action +=1
             #call UI
             #add to trade big_map
@@ -94,22 +95,30 @@ def main():
             pass
 
         @sp.entrypoint
-        def sellCard(self, userAddress, blockchainCardId, price):
+        def sellCard(self, userAddress, cardId, price):
             self.data.action +=1
-            assert self.data.users[userAddress].cards.contains(blockchainCardId), "You don't have this card"
-            self.data.market[blockchainCardId] = sp.record(
+            assert self.data.users[userAddress].cards.contains(cardId), "You don't have this card"
+            self.data.market[self.data.sellId] = sp.record(
                 seller = userAddress,
                 price = price,
-                cardId = blockchainCardId
+                cardId = cardId
             )
+            self.data.sellId += 1
 
         @sp.entrypoint
         def buyCard(self, userAddress, sellId):
             self.data.action +=1
             #check if user has enough tez + fee
             assert sp.amount == self.data.market[sellId].price + self.data.sellfee, "You must send the exact amount"
+            assert self.data.market.contains(sellId), "This card is not on the market"
+            assert self.data.users.contains(userAddress), "You must join the game before"
             #switch owner
-            self.data.users[userAddress].cards[self.data.market[sellId].cardId] += 1 # modify this to get the number of card of the user becaus we can have double
+            # if not in user's cards, add it
+            if not self.data.users[userAddress].cards.contains(self.data.market[sellId].cardId):
+                self.data.users[userAddress].cards[self.data.market[sellId].cardId] = 1
+            else:
+                # if user already has this card, increment
+                self.data.users[userAddress].cards[self.data.market[sellId].cardId] += 1
             # del from seller
             if self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId] == 1:
                 del self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId]
@@ -117,7 +126,6 @@ def main():
                 self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId] -= 1
             # transfer tez
             sp.send(self.data.market[sellId].seller, sp.amount - self.data.sellfee)
-            sp.send(self.data.owner, self.data.sellfee)
             # remove from market
             del self.data.market[sellId]
             
@@ -208,19 +216,19 @@ def main():
             sp.transfer(sp.sender, sp.tez(0), tcgcontract)
 
         @sp.entrypoint
-        def sellCard(self, id, price):
-            tcgcontract = sp.contract(sellCard_type, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
-            data = sp.record(userAddress = sp.sender, blockchainCardId = id, price = price)
-            sp.transfer(data, sp.tez(0), tcgcontract)
-            
-        @sp.entrypoint
-        def buyCard(self, id):
+        def buyCard(self, sellId):
             tcgcontract = sp.contract(buyCard_type, self.data.TCGContract, entrypoint="buyCard").unwrap_some()
-            data = sp.record(userAddress = sp.sender, sellId = id)
-            sp.transfer(data, sp.tez(2), tcgcontract)
+            data = sp.record(userAddress = sp.sender, sellId = sellId)
+            sp.transfer(data, sp.amount, tcgcontract)
 
         @sp.entrypoint
-        def askTrade(self, userAddress, askedBlockchainCardId, givenockchainCardId):
+        def sellCard(self, id, price):
+            tcgcontract = sp.contract(sellCard_type, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
+            data = sp.record(userAddress = sp.sender, cardId = id, price = price)
+            sp.transfer(data, sp.tez(0), tcgcontract)
+
+        @sp.entrypoint
+        def askTrade(self, userAddress, cardId, givenCardId):
             pass
 
         @sp.entrypoint
@@ -325,9 +333,6 @@ def test_oracle():
     scenario.h2("add Oracle with not owner user (Error)")
     c3.add_address_oracle(random,_sender=bob,_valid=False,_exception='You are not owner')
 
-
-
-    
 #Test for selling
 @sp.add_test()
 def test():
@@ -361,8 +366,8 @@ def test():
     c3.modify_random(145456446650,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
     c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
 
-    """
+    c2.joinTCG("test",_sender=alice,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
+
     #test for selling / buying card
-    c2.sellCard(0,sp.tez(10),_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
-    c2.buyCard(0,_sender=alice,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
-    """
+    c2.sellCard(id = 1, price = sp.tez(10), _sender = bob, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 39, 0))
+    c2.buyCard(0, _sender = alice, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 39, 0), _amount = sp.tez(12))
