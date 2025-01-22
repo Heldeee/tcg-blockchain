@@ -22,6 +22,7 @@ def main():
             self.data.users= sp.big_map({}) #user's address, user's pseudonym, big map user's cards id, lastRedeemed
             self.data.trades = sp.big_map({}) # Trade id, 2 address, 2 card id, timer, boolean for accept
             self.data.market = sp.big_map({}) # Sell id, address seller, price, card id
+            self.data.balance = sp.big_map({})
             self.data.priceBooster = sp.tez(5)
             self.data.action = 0
             self.data.sellfee = sp.tez(2)
@@ -179,16 +180,25 @@ def main():
             else:
                 self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId] -= 1
             # transfer tez
-            sp.send(self.data.market[sellId].seller, sp.amount - self.data.sellfee)
+            # sp.send(self.data.market[sellId].seller, sp.amount - self.data.sellfee)
+            if not self.data.balance.contains(self.data.market[sellId].seller):
+                self.data.balance[self.data.market[sellId].seller] = sp.amount - self.data.sellfee
+            else:
+                self.data.balance[self.data.market[sellId].seller] += sp.amount - self.data.sellfee
+
             # remove from market
+            if not self.data.balance.contains(self.data.owner):
+                self.data.balance[self.data.owner] = self.data.sellfee
+            else:
+                self.data.balance[self.data.owner] += self.data.sellfee
             del self.data.market[sellId]
             
         @sp.entrypoint
-        def get_balance_admin(self, nb_tez):
-            sp.cast(nb_tez,sp.mutez)
-            assert sp.sender == self.data.owner , "You are not owner"
-            assert nb_tez > sp.balance , "You can get more tez that the contract contains"
-            sp.send(self.data.owner,nb_tez)
+        def get_balance(self):
+            assert self.data.users.contains(sp.sender), "You need to JoinTCg Before"
+            assert self.data.balance.contains(sp.sender), "You have nothing to get"
+            sp.send(sp.sender, self.data.balance[sp.sender])
+            del self.data.balance[sp.sender]
             
         @sp.entrypoint
         def add_card(self,card):
