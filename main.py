@@ -34,7 +34,7 @@ def main():
             # number that change for call every entrypoints on this contract + randomness oracle + maybe more
             assert self.data.users.contains(player_address), "You need to JoinTCg Before"
             player = self.data.users[player_address]
-            assert sp.now > sp.add_days(player.lastRedeemed, 1), " You need to wait 1 days for new user to have free booster or you can only 1 booster free by days"
+            assert sp.now > sp.add_days(player.lastRedeemed, 1), "You need to wait 1 days for new user to have free booster or you can only 1 booster free by days"
             random_seed = sp.view("get_random", self.data.address_contract_oracle,(),sp.int).unwrap_some()
             for i in range(4):
                  self.data.action +=1
@@ -45,6 +45,7 @@ def main():
                      player.cards[random_index] = 1
                  else:
                     player.cards[random_index] += 1
+            player.lastRedeemed = sp.now
             self.data.users[player_address] = player
 
         @sp.entrypoint
@@ -206,14 +207,19 @@ def main():
 
         @sp.entrypoint
         def sellCard(self, id, price):
+            # this don't work
+            """
             tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
             sp.transfer(sp.record(userAddress = sp.sender, blockchainCardId = id, price = price), sp.tez(0), tcgcontract)
-
+            """
+            
         @sp.entrypoint
         def buyCard(self, id):
+            # this don't work
+            """
             tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="buyCard").unwrap_some()
             sp.transfer(sp.record(userAddress = sp.sender, sellId = id), sp.tez(0), tcgcontract)
-
+            """
         @sp.entrypoint
         def askTrade(self, userAddress, askedCardId, givenCardId):
             tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="exchangeCard").unwrap_some()
@@ -228,7 +234,103 @@ def main():
             pass
             
 
+#Test oracle with generate Card
+@sp.add_test()
+def test_oracle():
+    scenario = sp.test_scenario("Test oracle with generate Card", main)
+    alice = sp.test_account("alice").address
+    bob = sp.test_account("bob").address
+    toto = sp.test_account("toto").address
+    random = sp.test_account("random").address
+    random_2= sp.test_account("random_2").address
+    
+    scenario.h1("Test oracle with generate Card")
+    c3 = main.OracleRandom(alice)
+    c1 = main.TCGContract(alice,c3.address)
+    c2 = main.UserContract(c1.address)
+    
+    scenario += c1
+    scenario += c2
+    scenario += c3
 
+    scenario.h2("Create card for the beginning of the game")
+    c2.joinTCG("test",_sender=bob,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
+    c1.add_card(sp.record(title="Dragon de Feu", description="Capable de réduire ses ennemis en cendres en un souffle.", rarety=5), _sender=alice)
+    c1.add_card(sp.record(title="Golem de Pierre", description="Inébranlable et protecteur, une forteresse vivante.", rarety=3), _sender=alice)
+    c1.add_card(sp.record(title="Sorcier Sombre", description="Manipulateur des ombres, il inspire la peur.", rarety=4), _sender=alice)
+    c1.add_card(sp.record(title="Chevalier Divin", description="Un guerrier béni par les dieux eux-mêmes.", rarety=5), _sender=alice)
+    c1.add_card(sp.record(title="Loup Fantôme", description="Invisible la nuit, mais mortel au combat.", rarety=2), _sender=alice)
+    c1.add_card(sp.record(title="Archère Élémentaire", description="Maîtrise les flèches de feu, d'eau et de vent.", rarety=3), _sender=alice)
+    c1.add_card(sp.record(title="Revenant du Néant", description="Une entité qui revient sans cesse de l'oubli.", rarety=4), _sender=alice)
+    c1.add_card(sp.record(title="Mage du Temps", description="Peut ralentir ou accélérer le cours du temps.", rarety=5), _sender=alice)
+    c1.add_card(sp.record(title="Slime Ancien", description="Il semble faible, mais cache un pouvoir dévastateur.", rarety=1), _sender=alice)
+
+    scenario.h2("Test with create of FreeBooster")
+    c3.add_address_oracle(random,_sender=alice)
+    c3.modify_random(145456446650,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
+    c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
+
+    scenario.h2("Test with create of FreeBooster 10 min after already get my FreeBooster (Error)")
+    c3.modify_random(14545644650,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0))
+    c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_valid=False,_exception='You need to wait 1 days for new user to have free booster or you can only 1 booster free by days')
+
+    scenario.h2("Test with create of FreeBooster with Player don't join the game (Error)")
+    c3.modify_random(14545644654,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0))
+    c2.getFreeBooster(_sender=toto,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_valid=False,_exception='You need to JoinTCg Before')
+
+    scenario.h2("Test with create of buyBooster")
+    c3.modify_random(14545644651,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0))
+    c2.buyBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_amount=sp.tez(5))
+
+    scenario.h2("Test with create of buyBooster with amount")
+    c3.modify_random(14545644641,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0))
+    c2.buyBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_amount=sp.tez(1),_valid=False,_exception='You need to paid 5 tez to have the booster')
+
+    scenario.h2("Test with create of buyBooster with Player don't join the game (Error)")
+    c3.modify_random(1454564654,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0))
+    c2.getFreeBooster(_sender=toto,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_valid=False,_exception='You need to JoinTCg Before')
+
+    scenario.h2("Test with create of buyBooster with oracle don't send data before 10 sec (Error)")
+    c3.modify_random(1454564657,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0))
+    c2.buyBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,49,11),_valid=False,_amount=sp.tez(5),_exception='Problem with random oracle need to wait')
+
+    scenario.h2("oracle send the same random (Error)")
+    c3.modify_random(1454564657,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_valid=False,_exception="It's the same number of the last random")
+
+    
+    scenario.h2("Deactivate Oracle")
+    c3.deactivate_address_oracle(random,_sender=alice)
+    scenario.verify(c3.data.autorize_address[random] == False)
+
+    scenario.h2("oracle send the random but it's deactivate (Error)")
+    c3.modify_random(145456467,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_valid=False,_exception="this Oracle it's deactivate for the moment you can modify this number")
+
+    scenario.h2("activate Oracle")
+    c3.activate_address_oracle(random,_sender=alice)
+    scenario.verify(c3.data.autorize_address[random] == True)
+
+    scenario.h2("Deactivate Oracle with wrong address (Error)")
+    c3.deactivate_address_oracle(random_2,_sender=alice,_valid=False,_exception="This address don't exist")
+
+    scenario.h2("activate Oracle with wrong address (Error)")
+    c3.activate_address_oracle(random_2,_sender=alice,_valid=False,_exception="This address don't exist")
+
+    scenario.h2("deleted Oracle")
+    c3.del_address_oracle(random,_sender=alice)
+
+    scenario.h2("oracle send the random but it's deleted (Error)")
+    c3.modify_random(145456467,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,49,0),_valid=False,_exception="You can modify the random number")
+
+    scenario.h2("deleted Oracle  with wrong address (Error)")
+    c3.del_address_oracle(random_2,_sender=alice,_valid=False,_exception="This address don't exist")
+
+    scenario.h2("add Oracle with not owner user (Error)")
+    c3.add_address_oracle(random,_sender=bob,_valid=False,_exception='You are not owner')
+
+
+
+    
+#Test for selling
 @sp.add_test()
 def test():
     scenario = sp.test_scenario("TezCG", main)
@@ -261,7 +363,8 @@ def test():
     c3.modify_random(145456446650,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
     c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
 
+    """
     #test for selling / buying card
     c2.sellCard(0,sp.tez(10),_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
     c2.buyCard(0,_sender=alice,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
-    
+    """
