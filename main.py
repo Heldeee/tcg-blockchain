@@ -5,6 +5,11 @@ def main():
 
     joinTCG_type : type = sp.record(userAddress = sp.address, pseudonym = sp.string, cards = sp.big_map[sp.int,sp.int], lastRedeemed = sp.timestamp)
     generate_type : type = sp.address
+    sellCard_type : type = sp.record(userAddress = sp.address, cardId = sp.int, price = sp.mutez)
+    buyCard_type : type = sp.record(userAddress = sp.address, sellId = sp.int)
+    exchangeCard_type : type = sp.record(userAddress1 = sp.address, userAddress2 = sp.address, cardId1 = sp.int, cardId2 = sp.int)
+    acceptTrade_type : type = sp.int
+    declineTrade_type : type = sp.int
     
     class TCGContract(sp.Contract):
 
@@ -20,6 +25,8 @@ def main():
             self.data.priceBooster = sp.tez(5)
             self.data.action = 0
             self.data.sellfee = sp.tez(2)
+            self.data.sellId = 0
+            self.data.tradeId = 0
 
         @sp.entrypoint
         def joinUser(self, user):
@@ -49,7 +56,7 @@ def main():
             self.data.users[player_address] = player
 
         @sp.entrypoint
-        def generatePaidBooster(self,player_address):
+        def generatePaidBooster(self, player_address):
             self.data.action +=1
             # number that change for call every entrypoints on this contract + randomness oracle + maybe more
             assert self.data.users.contains(player_address), "You need to JoinTCg Before"
@@ -77,37 +84,95 @@ def main():
 
         @sp.entrypoint
         def exchangeCard(self, userAddress1, userAddress2, cardId1, cardId2):
-            self.data.action +=1
-            #call UI
-            #add to trade big_map
-            #call process
-            pass
+            self.data.action += 1
+            assert self.data.users.contains(userAddress1), "You need to JoinTCg Before"
+            assert self.data.users.contains(userAddress2), "Your trade partner need to JoinTCg Before"
+            player1 = self.data.users[userAddress1]
+            assert player1.cards.contains(cardId1), "You need to have the card that you want to trade"
+            player2 = self.data.users[userAddress1]
+            assert player2.cards.contains(cardId2), "Your trade partner need to have the card that you want to have from him"
+            self.data.trades[self.data.tradeId] = sp.record(
+                userAddress1 = userAddress1,
+                userAddress2 = userAddress2,
+                cardId1 = cardId1,
+                cardId2 = cardId2,
+                timer = sp.now,
+                accepted = False)
 
         @sp.entrypoint
         def processExchange(self, tradeId):
-            self.data.action +=1
-            #check if users have their cards
-            #check timer
-            #switch owner + 1 tez for fee
-            pass
+            self.data.action += 1
+            assert self.data.trades[tradeId], "This trade does not exist or has been refused"
+            assert self.data.trades[tradeId].accepted == False, "Your trade partner does not have accepted yet"
+            player1 = self.data.users[self.data.trades[tradeId].userAddress1]
+            assert player1.cards.contains(self.data.trades[tradeId].cardId1), "You need to have the card that you want to trade"
+            player2 = self.data.users[self.data.trades[tradeId].userAddress2]
+            assert player2.cards.contains(self.data.trades[tradeId].cardId2), "Your trade partner need to have the card that you want to have from him"
+            assert self.data.users.contains(player1), "You need to JoinTCg Before"
+            assert self.data.users.contains(player2), "Your trade partner need to JoinTCg Before"
+            
+            if not player1.cards.contains(self.data.trades[tradeId].cardId2):
+                player1.cards[self.data.trades[tradeId].cardId2] = 1
+            else:
+                player1.cards[self.data.trades[tradeId].cardId2] += 1
+
+            if player2.cards.contains(self.data.trades[tradeId].cardId2) == 1:
+                del player2.cards[self.data.trades[tradeId].cardId2]
+            else:
+                player2.cards[self.data.trades[tradeId].cardId2] -= 1
+                
+            if not player2.cards.contains(self.data.trades[tradeId].cardId1):
+                player2.cards[self.data.trades[tradeId].cardId1] = 1
+            else:
+                player2.cards[self.data.trades[tradeId].cardId1] += 1
+
+            if player1.cards.contains(self.data.trades[tradeId].cardId1) == 1:
+                del player1.cards[self.data.trades[tradeId].cardId1]
+            else:
+                player1.cards[self.data.trades[tradeId].cardId1] -= 1
+            
+            del self.data.trades[tradeId]
+        
+        @sp.entrypoint
+        def acceptTrade(self, tradeId):
+            assert self.data.trades[tradeId], "This trade does no longer exist"
+            assert sp.add_days(self.data.trades[tradeId].timer, 1) < sp.now,  "The time limit for this trade has expired => the trade is cancelled"
+            assert self.data.trades[tradeId].userAddress2 == sp.sender, "You are not allowed to accept this trade"
+            self.data.trades[tradeId].accepted = True
+        
+        @sp.entrypoint
+        def declineTrade(self, tradeId):
+            assert self.data.trades[tradeId], "This trade does no longer exist"
+            assert sp.add_days(self.data.trades[tradeId].timer, 1) < sp.now,  "The time limit for this trade has expired => the trade is cancelled"
+            assert self.data.trades[tradeId].userAddress2 == sp.sender, "You are not allowed to decline this trade"
+            del self.data.trades[tradeId]
+            
 
         @sp.entrypoint
         def sellCard(self, userAddress, cardId, price):
             self.data.action +=1
             assert self.data.users[userAddress].cards.contains(cardId), "You don't have this card"
-            self.data.market[cardId] = sp.record(
+            self.data.market[self.data.sellId] = sp.record(
                 seller = userAddress,
                 price = price,
                 cardId = cardId
             )
+            self.data.sellId += 1
 
         @sp.entrypoint
         def buyCard(self, userAddress, sellId):
             self.data.action +=1
             #check if user has enough tez + fee
             assert sp.amount == self.data.market[sellId].price + self.data.sellfee, "You must send the exact amount"
+            assert self.data.market.contains(sellId), "This card is not on the market"
+            assert self.data.users.contains(userAddress), "You must join the game before"
             #switch owner
-            self.data.users[userAddress].cards[self.data.market[sellId].cardId] += 1 # modify this to get the number of card of the user becaus we can have double
+            # if not in user's cards, add it
+            if not self.data.users[userAddress].cards.contains(self.data.market[sellId].cardId):
+                self.data.users[userAddress].cards[self.data.market[sellId].cardId] = 1
+            else:
+                # if user already has this card, increment
+                self.data.users[userAddress].cards[self.data.market[sellId].cardId] += 1
             # del from seller
             if self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId] == 1:
                 del self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId]
@@ -115,7 +180,6 @@ def main():
                 self.data.users[self.data.market[sellId].seller].cards[self.data.market[sellId].cardId] -= 1
             # transfer tez
             sp.send(self.data.market[sellId].seller, sp.amount - self.data.sellfee)
-            sp.send(self.data.owner, self.data.sellfee)
             # remove from market
             del self.data.market[sellId]
             
@@ -132,6 +196,8 @@ def main():
             assert sp.sender == self.data.owner , "You are not owner"
             self.data.cards[self.data.nbcard] = card
             self.data.nbcard += 1
+            
+        
             
     class OracleRandom(sp.Contract):
         # add random number
@@ -206,32 +272,32 @@ def main():
             sp.transfer(sp.sender, sp.tez(0), tcgcontract)
 
         @sp.entrypoint
-        def sellCard(self, id, price):
-            # this don't work
-            """
-            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
-            sp.transfer(sp.record(userAddress = sp.sender, blockchainCardId = id, price = price), sp.tez(0), tcgcontract)
-            """
-            
+        def buyCard(self, sellId):
+            tcgcontract = sp.contract(buyCard_type, self.data.TCGContract, entrypoint="buyCard").unwrap_some()
+            data = sp.record(userAddress = sp.sender, sellId = sellId)
+            sp.transfer(data, sp.amount, tcgcontract)
+
         @sp.entrypoint
-        def buyCard(self, id):
-            # this don't work
-            """
-            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="buyCard").unwrap_some()
-            sp.transfer(sp.record(userAddress = sp.sender, sellId = id), sp.tez(0), tcgcontract)
-            """
+        def sellCard(self, id, price):
+            tcgcontract = sp.contract(sellCard_type, self.data.TCGContract, entrypoint="sellCard").unwrap_some()
+            data = sp.record(userAddress = sp.sender, cardId = id, price = price)
+            sp.transfer(data, sp.tez(0), tcgcontract)
+
         @sp.entrypoint
         def askTrade(self, userAddress, askedCardId, givenCardId):
-            tcgcontract = sp.contract(sp.TUnit, self.data.TCGContract, entrypoint="exchangeCard").unwrap_some()
-            sp.transfer(sp.record(userAddress1 = sp.sender, userAddress2 = userAddress, cardId1 = askedCardId, cardId2 = givenCardId), sp.tez(0), tcgcontract)
+            tcgcontract = sp.contract(exchangeCard_type, self.data.TCGContract, entrypoint="exchangeCard").unwrap_some()
+            data = sp.record(userAddress1 = sp.sender, userAddress2 = userAddress, cardId1 = askedCardId, cardId2 = givenCardId)
+            sp.transfer(data, sp.tez(0), tcgcontract)
 
         @sp.entrypoint
-        def acceptTrade(self):
-            pass
+        def acceptTrade(self, tradeId):
+            tcgcontract = sp.contract(acceptTrade_type, self.data.TCGContract, entrypoint="acceptTrade").unwrap_some()
+            sp.transfer(tradeId, sp.tez(0), tcgcontract)
 
         @sp.entrypoint
-        def declineTrade(self):
-            pass
+        def declineTrade(self, tradeId):
+            tcgcontract = sp.contract(declineTrade_type, self.data.TCGContract, entrypoint="declineTrade").unwrap_some()
+            sp.transfer(tradeId, sp.tez(0), tcgcontract)
             
 
 #Test oracle with generate Card
@@ -327,9 +393,6 @@ def test_oracle():
     scenario.h2("add Oracle with not owner user (Error)")
     c3.add_address_oracle(random,_sender=bob,_valid=False,_exception='You are not owner')
 
-
-
-    
 #Test for selling
 @sp.add_test()
 def test():
@@ -363,8 +426,8 @@ def test():
     c3.modify_random(145456446650,_sender=random,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
     c2.getFreeBooster(_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
 
-    """
+    c2.joinTCG("test",_sender=alice,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
+
     #test for selling / buying card
-    c2.sellCard(0,sp.tez(10),_sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
-    c2.buyCard(0,_sender=alice,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
-    """
+    c2.sellCard(id = 1, price = sp.tez(10), _sender = bob, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 39, 0))
+    c2.buyCard(0, _sender = alice, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 39, 0), _amount = sp.tez(12))
