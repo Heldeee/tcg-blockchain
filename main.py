@@ -147,6 +147,9 @@ def main():
                 del player1.cards[self.data.trades[tradeId].cardId1]
             else:
                 player1.cards[self.data.trades[tradeId].cardId1] -= 1
+
+            self.data.users[self.data.trades[tradeId].userAddress1] = player1
+            self.data.users[self.data.trades[tradeId].userAddress2] = player2
             
             del self.data.trades[tradeId]
         @sp.entrypoint
@@ -507,5 +510,5 @@ def test_trades():
     c2.askTrade(userAddress = alice, askedCardId = 2, givenCardId = 1, _sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,42,0))
     c2.acceptTrade(0, _sender=alice, _now=sp.timestamp_from_utc(2025,1,17,15,50,0))
     c2.processExchange(0, _sender=random, _now=sp.timestamp_from_utc(2025,1,17,15,52,0))
-    # scenario.verify(c1.data.users[bob].cards.contains(2))
-    # scenario.verify(c1.data.users[alice].cards.contains(1))
+    scenario.verify(c1.data.users[bob].cards.contains(2))
+    scenario.verify(c1.data.users[alice].cards.contains(1))
