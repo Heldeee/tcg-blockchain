@@ -123,32 +123,35 @@ def main():
             assert self.data.trades[tradeId].accepted == True, "Your trade partner does not have accepted yet"
             player1 = self.data.users[self.data.trades[tradeId].userAddress1]
             player2 = self.data.users[self.data.trades[tradeId].userAddress2]
+            cardId1 = self.data.trades[tradeId].cardId1
+            cardId2 = self.data.trades[tradeId].cardId2
             assert self.data.users.contains(self.data.trades[tradeId].userAddress1), "You need to JoinTCg Before"
             assert self.data.users.contains(self.data.trades[tradeId].userAddress2), "Your trade partner need to JoinTCg Before"
             assert player1.cards.contains(self.data.trades[tradeId].cardId1), "You need to have the card that you want to trade"
             assert player2.cards.contains(self.data.trades[tradeId].cardId2), "Your trade partner need to have the card that you want to have from him"
             
-            if not player1.cards.contains(self.data.trades[tradeId].cardId2):
-                player1.cards[self.data.trades[tradeId].cardId2] = 1
+            if not player1.cards.contains(cardId2):
+                player1.cards[cardId2] = 1
             else:
-                player1.cards[self.data.trades[tradeId].cardId2] += 1
+                player1.cards[cardId2] += 1
 
-            if player2.cards[self.data.trades[tradeId].cardId2] == 1:
-                del player2.cards[self.data.trades[tradeId].cardId2]
+            if player2.cards[cardId2] == 1:
+                del player2.cards[cardId2]
             else:
-                player2.cards[self.data.trades[tradeId].cardId2] -= 1
+                player2.cards[cardId2] -= 1
                 
-            if not player2.cards.contains(self.data.trades[tradeId].cardId1):
-                player2.cards[self.data.trades[tradeId].cardId1] = 1
+            if not player2.cards.contains(cardId1):
+                player2.cards[cardId1] = 1
             else:
-                player2.cards[self.data.trades[tradeId].cardId1] += 1
+                player2.cards[cardId1] += 1
 
-            if player1.cards[self.data.trades[tradeId].cardId1] == 1:
-                del player1.cards[self.data.trades[tradeId].cardId1]
+            if player1.cards[cardId1] == 1:
+                del player1.cards[cardId1]
             else:
-                player1.cards[self.data.trades[tradeId].cardId1] -= 1
+                player1.cards[cardId1] -= 1
             
             del self.data.trades[tradeId]
+            
         @sp.entrypoint
         def acceptTrade(self, tradeId, userAddress):
             assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
@@ -504,6 +507,7 @@ def test_trades():
     c2.joinTCG("alice_pseudo",_sender=alice,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
     c2.getFreeBooster(_sender=alice,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
 
+    scenario.h2("Good trade")
     c2.askTrade(userAddress = alice, askedCardId = 2, givenCardId = 1, _sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,42,0))
     c2.acceptTrade(0, _sender=alice, _now=sp.timestamp_from_utc(2025,1,17,15,50,0))
     c2.processExchange(0, _sender=random, _now=sp.timestamp_from_utc(2025,1,17,15,52,0))
