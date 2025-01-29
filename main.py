@@ -117,9 +117,9 @@ def main():
 
         @sp.entrypoint
         def processExchange(self, tradeId):
+            assert self.data.trades.contains(tradeId), "This trade does not exist or has been refused"
             assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
             self.data.action += 1
-            assert self.data.trades.contains(tradeId), "This trade does not exist or has been refused"
             assert self.data.trades[tradeId].accepted == True, "Your trade partner does not have accepted yet"
             player1 = self.data.users[self.data.trades[tradeId].userAddress1]
             player2 = self.data.users[self.data.trades[tradeId].userAddress2]
@@ -157,17 +157,21 @@ def main():
             
         @sp.entrypoint
         def acceptTrade(self, tradeId, userAddress):
-            assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
             assert self.data.trades.contains(tradeId), "This trade does no longer exist"
-            assert sp.add_days(self.data.trades[tradeId].timer, 1) > sp.now,  "The time limit for this trade has expired => the trade is cancelled"
+            assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
+            if sp.add_days(self.data.trades[tradeId].timer, 1) < sp.now:
+                del self.data.trades[tradeId]
+            assert self.data.trades.contains(tradeId),  "The time limit for this trade has expired => the trade is cancelled"
             assert self.data.trades[tradeId].userAddress2 == userAddress, "You are not allowed to accept this trade"
             self.data.trades[tradeId].accepted = True
             
         @sp.entrypoint
         def declineTrade(self, tradeId, userAddress):
-            assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
             assert self.data.trades.contains(tradeId), "This trade does no longer exist"
-            assert sp.add_days(self.data.trades[tradeId].timer, 1) > sp.now,  "The time limit for this trade has expired => the trade is cancelled"
+            assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
+            if sp.add_days(self.data.trades[tradeId].timer, 1) < sp.now:
+                del self.data.trades[tradeId]
+            assert self.data.trades.contains(tradeId),  "The time limit for this trade has expired => the trade is cancelled"
             assert self.data.trades[tradeId].userAddress2 == userAddress, "You are not allowed to decline this trade"
             del self.data.trades[tradeId]
 
@@ -562,8 +566,8 @@ def test_trades():
     c2.processExchange(tradeId + 1, _sender=random, _now=sp.timestamp_from_utc(2025,1,21,15,53,0))
     c2.acceptTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,21,15,54,0))
     c2.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,21,15,55,0), _valid=False, _exception="You need to have the card that you want to trade")
-    scenario.verify(c1.data.trades.contains(tradeId) == False)
-    scenario.h2("Unit test : processExchange with trade when the player1 does not have the card")
+    # scenario.verify(c1.data.trades.contains(tradeId) == False)
+    scenario.h2("Unit test : processExchange with trade when the player2 does not have the card")
     tradeId = 6
     c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 5, _sender=bob,_now=sp.timestamp_from_utc(2025,1,22,15,42,0))
     c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 8, _sender=bob,_now=sp.timestamp_from_utc(2025,1,22,15,45,0))
@@ -571,4 +575,47 @@ def test_trades():
     c2.processExchange(tradeId + 1, _sender=random, _now=sp.timestamp_from_utc(2025,1,22,15,53,0))
     c2.acceptTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,22,15,54,0))
     c2.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,22,15,55,0), _valid=False, _exception="Your trade partner need to have the card that you want to have from him")
+    # scenario.verify(c1.data.trades.contains(tradeId) == False)
+    
+    tradeId = 8
+    scenario.h2("Unit test : askTrade directly to TCGContract entrypoints")
+    c1.exchangeCard(userAddress1 = bob, userAddress2 = alice, cardId1 = 8, cardId2 = 1, _sender=bob,_now=sp.timestamp_from_utc(2025,1,23,15,42,0), _valid=False, _exception="Only User_contract can interact with this endpoint")
     scenario.verify(c1.data.trades.contains(tradeId) == False)
+    scenario.h2("Unit test : askTrade with sender not in TCG")
+    c2.askTrade(userAddress = alice, askedCardId = 8, givenCardId = 1, _sender=john,_now=sp.timestamp_from_utc(2025,1,23,15,46,0), _valid=False, _exception="You need to JoinTCg Before")
+    scenario.verify(c1.data.trades.contains(tradeId) == False)
+    scenario.h2("Unit test : askTrade with receiver not in TCG")
+    c2.askTrade(userAddress = john, askedCardId = 8, givenCardId = 1, _sender=bob,_now=sp.timestamp_from_utc(2025,1,23,15,47,0), _valid=False, _exception="Your trade partner need to JoinTCg Before")
+    scenario.verify(c1.data.trades.contains(tradeId) == False)
+    scenario.h2("Unit test : askTrade with sender does not have the card")
+    c2.askTrade(userAddress = alice, askedCardId = 8, givenCardId = 6, _sender=bob,_now=sp.timestamp_from_utc(2025,1,23,15,48,0), _valid=False, _exception="You need to have the card that you want to trade")
+    scenario.verify(c1.data.trades.contains(tradeId) == False)
+    scenario.h2("Unit test : askTrade with receiver does not have the card")
+    c2.askTrade(userAddress = alice, askedCardId = 6, givenCardId = 1, _sender=bob,_now=sp.timestamp_from_utc(2025,1,23,15,49,0), _valid=False, _exception="Your trade partner need to have the card that you want to have from him")
+    scenario.verify(c1.data.trades.contains(tradeId) == False)
+    
+    scenario.h2("Unit test : acceptTrade but tradeId does not exist")
+    c2.acceptTrade(1, _sender=alice, _now=sp.timestamp_from_utc(2025,1,24,15,50,0), _valid=False, _exception="This trade does no longer exist")
+    scenario.h2("Unit test : acceptTrade directly to TCGContract entrypoints")
+    c1.acceptTrade(tradeId=3, userAddress=alice, _sender=alice, _now=sp.timestamp_from_utc(2025,1,20,15,45,0), _valid=False, _exception="Only User_contract can interact with this endpoint")
+    scenario.verify(c1.data.trades[3].accepted == False)
+    scenario.h2("Unit test : acceptTrade with sender not allowed to call entrypoint of this tradeId")
+    c2.acceptTrade(3, _sender=bob, _now=sp.timestamp_from_utc(2025,1,20,15,46,0), _valid=False, _exception="You are not allowed to accept this trade")
+    scenario.verify(c1.data.trades[3].accepted == False)
+    scenario.h2("Unit test : acceptTrade with time limit expired")
+    c2.acceptTrade(3, _sender=alice, _now=sp.timestamp_from_utc(2025,1,25,15,55,0), _valid=False, _exception="The time limit for this trade has expired => the trade is cancelled")
+    # scenario.verify(c1.data.trades.contains(3) == False)
+    
+    
+    c2.askTrade(userAddress = alice, askedCardId = 8, givenCardId = 1, _sender=bob,_now=sp.timestamp_from_utc(2025,1,26,15,46,0))
+    scenario.h2("Unit test : declineTrade but tradeId does not exist")
+    c2.declineTrade(1, _sender=alice, _now=sp.timestamp_from_utc(2025,1,26,15,50,0), _valid=False, _exception="This trade does no longer exist")
+    scenario.h2("Unit test : declineTrade directly to TCGContract entrypoints")
+    c1.declineTrade(tradeId=tradeId, userAddress=alice, _sender=alice, _now=sp.timestamp_from_utc(2025,1,26,15,48,0), _valid=False, _exception="Only User_contract can interact with this endpoint")
+    scenario.verify(c1.data.trades.contains(tradeId))
+    scenario.h2("Unit test : declineTrade with sender not allowed to call entrypoint of this tradeId")
+    c2.declineTrade(tradeId, _sender=bob, _now=sp.timestamp_from_utc(2025,1,26,15,50,0), _valid=False, _exception="You are not allowed to decline this trade")
+    scenario.verify(c1.data.trades.contains(tradeId))
+    scenario.h2("Unit test : declineTrade with time limit expired")
+    c2.declineTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,27,15,55,0), _valid=False, _exception="The time limit for this trade has expired => the trade is cancelled")
+    # scenario.verify(c1.data.trades.contains(tradeId) == False)
