@@ -125,10 +125,10 @@ def main():
             player2 = self.data.users[self.data.trades[tradeId].userAddress2]
             cardId1 = self.data.trades[tradeId].cardId1
             cardId2 = self.data.trades[tradeId].cardId2
-            assert self.data.users.contains(self.data.trades[tradeId].userAddress1), "You need to JoinTCg Before"
-            assert self.data.users.contains(self.data.trades[tradeId].userAddress2), "Your trade partner need to JoinTCg Before"
-            assert player1.cards.contains(self.data.trades[tradeId].cardId1), "You need to have the card that you want to trade"
-            assert player2.cards.contains(self.data.trades[tradeId].cardId2), "Your trade partner need to have the card that you want to have from him"
+            if not player1.cards.contains(cardId1) or not player2.cards.contains(cardId2):
+                del self.data.trades[tradeId]
+            assert player1.cards.contains(cardId1), "You need to have the card that you want to trade"
+            assert player2.cards.contains(cardId2), "Your trade partner need to have the card that you want to have from him"
             
             if not player1.cards.contains(cardId2):
                 player1.cards[cardId2] = 1
@@ -148,7 +148,10 @@ def main():
             if player1.cards[cardId1] == 1:
                 del player1.cards[cardId1]
             else:
-                player1.cards[cardId1] -= 1
+                player1.cards[self.data.trades[tradeId].cardId1] -= 1
+
+            self.data.users[self.data.trades[tradeId].userAddress1] = player1
+            self.data.users[self.data.trades[tradeId].userAddress2] = player2
             
             del self.data.trades[tradeId]
             
@@ -478,6 +481,7 @@ def test_trades():
     alice = sp.test_account("alice").address
     bob = sp.test_account("bob").address
     random = sp.test_account("random").address
+    john = sp.test_account("john").address
     
     scenario.h1("TezCG")
     c3 = main.OracleRandom(alice)
@@ -506,10 +510,65 @@ def test_trades():
 
     c2.joinTCG("alice_pseudo",_sender=alice,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
     c2.getFreeBooster(_sender=alice,_now=sp.timestamp_from_utc(2025,1,17,15,39,0))
-
-    scenario.h2("Good trade")
+    
+    
+    scenario.h2("Unit test : askTrade good")
+    tradeId = 0
     c2.askTrade(userAddress = alice, askedCardId = 2, givenCardId = 1, _sender=bob,_now=sp.timestamp_from_utc(2025,1,17,15,42,0))
-    c2.acceptTrade(0, _sender=alice, _now=sp.timestamp_from_utc(2025,1,17,15,50,0))
-    c2.processExchange(0, _sender=random, _now=sp.timestamp_from_utc(2025,1,17,15,52,0))
-    # scenario.verify(c1.data.users[bob].cards.contains(2))
-    # scenario.verify(c1.data.users[alice].cards.contains(1))
+    scenario.verify(c1.data.tradeId == tradeId + 1)
+    scenario.verify(c1.data.trades.contains(tradeId))
+    scenario.verify(c1.data.trades[tradeId].userAddress1 == bob)
+    scenario.verify(c1.data.trades[tradeId].userAddress2 == alice)
+    scenario.verify(c1.data.trades[tradeId].cardId1 == 1)
+    scenario.verify(c1.data.trades[tradeId].cardId2 == 2)
+    scenario.verify(c1.data.trades[tradeId].timer == sp.timestamp_from_utc(2025,1,17,15,42,0))
+    scenario.verify(c1.data.trades[tradeId].accepted == False)
+    
+    scenario.h2("Unit test : acceptTrade good")
+    c2.acceptTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,17,15,50,0))
+    scenario.verify(c1.data.trades[tradeId].accepted == True)
+    
+    scenario.h2("Unit test : processExchange good")
+    c2.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,17,15,52,0))
+    scenario.verify(c1.data.users[bob].cards.contains(2))
+    scenario.verify(c1.data.users[alice].cards.contains(1))
+    scenario.verify(c1.data.users[bob].cards.contains(1) == False)
+    scenario.verify(c1.data.users[alice].cards.contains(2) == False)
+    
+    scenario.h2("Unit test : declineTrade good")
+    tradeId = 1
+    c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 2, _sender=bob,_now=sp.timestamp_from_utc(2025,1,18,15,42,0))
+    c2.declineTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,18,15,50,0))
+    scenario.verify(c1.data.trades.contains(tradeId) == False)
+    
+    scenario.h2("Unit test : processExchange with refused trade")
+    c2.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,18,15,52,0), _valid=False, _exception="This trade does not exist or has been refused")
+    scenario.h2("Unit test : processExchange with trade that does not exist")
+    c2.processExchange(4, _sender=random, _now=sp.timestamp_from_utc(2025,1,18,15,53,0), _valid=False, _exception="This trade does not exist or has been refused")
+    scenario.h2("Unit test : processExchange directly to TCGContract entrypoints")
+    tradeId = 2
+    c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 2, _sender=bob,_now=sp.timestamp_from_utc(2025,1,19,15,42,0))
+    c2.acceptTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,19,15,50,0))
+    c1.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,19,15,53,0), _valid=False, _exception="Only User_contract can interact with this endpoint")
+    scenario.h2("Unit test : processExchange with trade not accepted yet")
+    tradeId = 3
+    c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 2, _sender=bob,_now=sp.timestamp_from_utc(2025,1,20,15,42,0))
+    c2.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,20,15,53,0), _valid=False, _exception="Your trade partner does not have accepted yet")
+    scenario.h2("Unit test : processExchange with trade when the player1 does not have the card")
+    tradeId = 4
+    c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 2, _sender=bob,_now=sp.timestamp_from_utc(2025,1,21,15,42,0))
+    c2.askTrade(userAddress = alice, askedCardId = 7, givenCardId = 2, _sender=bob,_now=sp.timestamp_from_utc(2025,1,21,15,45,0))
+    c2.acceptTrade(tradeId + 1, _sender=alice, _now=sp.timestamp_from_utc(2025,1,21,15,50,0))
+    c2.processExchange(tradeId + 1, _sender=random, _now=sp.timestamp_from_utc(2025,1,21,15,53,0))
+    c2.acceptTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,21,15,54,0))
+    c2.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,21,15,55,0), _valid=False, _exception="You need to have the card that you want to trade")
+    scenario.verify(c1.data.trades.contains(tradeId) == False)
+    scenario.h2("Unit test : processExchange with trade when the player1 does not have the card")
+    tradeId = 6
+    c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 5, _sender=bob,_now=sp.timestamp_from_utc(2025,1,22,15,42,0))
+    c2.askTrade(userAddress = alice, askedCardId = 1, givenCardId = 8, _sender=bob,_now=sp.timestamp_from_utc(2025,1,22,15,45,0))
+    c2.acceptTrade(tradeId + 1, _sender=alice, _now=sp.timestamp_from_utc(2025,1,22,15,50,0))
+    c2.processExchange(tradeId + 1, _sender=random, _now=sp.timestamp_from_utc(2025,1,22,15,53,0))
+    c2.acceptTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,22,15,54,0))
+    c2.processExchange(tradeId, _sender=random, _now=sp.timestamp_from_utc(2025,1,22,15,55,0), _valid=False, _exception="Your trade partner need to have the card that you want to have from him")
+    scenario.verify(c1.data.trades.contains(tradeId) == False)
