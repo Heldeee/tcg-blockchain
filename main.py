@@ -192,8 +192,8 @@ def main():
             assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
             self.data.action +=1
             #check if user has enough tez + fee
-            assert sp.amount == self.data.market[sellId].price + self.data.sellfee, "You must send the exact amount"
             assert self.data.market.contains(sellId), "This card is not on the market"
+            assert sp.amount == self.data.market[sellId].price + self.data.sellfee, "You must send the exact amount"
             assert self.data.users.contains(userAddress), "You must join the game before"
             #switch owner
             # if not in user's cards, add it
@@ -441,13 +441,13 @@ def test_oracle():
 
 #Test for selling
 @sp.add_test()
-def test():
+def test_sell_buy():
     scenario = sp.test_scenario("TezCG", main)
     alice = sp.test_account("alice").address
     bob = sp.test_account("bob").address
     random = sp.test_account("random").address
     
-    scenario.h1("TezCG")
+    scenario.h1("Test Sell and Buy Logic")
     c3 = main.OracleRandom(alice)
     c1 = main.TCGContract(alice,c3.address)
     c2 = main.UserContract(c1.address)
@@ -474,9 +474,34 @@ def test():
 
     c2.joinTCG("test",_sender=alice,_amount=sp.tez(1),_now=sp.timestamp_from_utc(2025,1,16,15,38,0))
 
-    #test for selling / buying card
+    # Test for selling / buying card
+    scenario.h2("Unit test: sellCard good")
     c2.sellCard(id = 1, price = sp.tez(10), _sender = bob, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 39, 0))
+    scenario.verify(c1.data.market.contains(0))
+    scenario.verify(c1.data.market[0].seller == bob)
+    scenario.verify(c1.data.market[0].price == sp.tez(10))
+    scenario.verify(c1.data.market[0].cardId == 1)
+
+    scenario.h2("Unit test: buyCard good")
     c2.buyCard(0, _sender = alice, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 39, 0), _amount = sp.tez(12))
+    scenario.verify(c1.data.users[alice].cards.contains(1))
+    scenario.verify(c1.data.users[bob].cards.contains(1) == False)
+    scenario.verify(c1.data.balance[bob] == sp.tez(10))
+    scenario.verify(c1.data.balance[alice] == sp.tez(2))
+    scenario.verify(c1.data.market.contains(0) == False)
+
+    scenario.h2("Unit test: sellCard without owning the card (Error)")
+    c2.sellCard(id = 2, price = sp.tez(10), _sender = bob, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 40, 0), _valid=False, _exception="You don't have this card")
+
+    scenario.h2("Unit test: buyCard with incorrect amount (Error)")
+    c2.sellCard(id = 1, price = sp.tez(10), _sender = alice, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 41, 0))
+    c2.buyCard(1, _sender = bob, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 42, 0), _amount = sp.tez(11), _valid=False, _exception="You must send the exact amount")
+
+    scenario.h2("Unit test: buyCard for non-existent sellId (Error)")
+    c2.buyCard(99, _sender = bob, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 43, 0), _amount = sp.tez(12), _valid=False, _exception="This card is not on the market")
+
+    scenario.h2("Unit test: buyCard without joining the game (Error)")
+    c2.buyCard(1, _sender = random, _now = sp.timestamp_from_utc(2025, 1, 17, 15, 44, 0), _amount = sp.tez(12), _valid=False, _exception="You must join the game before")
 
 #Test for trades
 @sp.add_test()
@@ -487,7 +512,7 @@ def test_trades():
     random = sp.test_account("random").address
     john = sp.test_account("john").address
     
-    scenario.h1("TezCG")
+    scenario.h1("Test Trades")
     c3 = main.OracleRandom(alice)
     c1 = main.TCGContract(alice,c3.address)
     c2 = main.UserContract(c1.address)
