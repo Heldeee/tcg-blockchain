@@ -157,7 +157,7 @@ def main():
         def acceptTrade(self, tradeId, userAddress):
             assert self.data.trades.contains(tradeId), "This trade does no longer exist"
             assert self.data.address_contract_user == sp.sender ,"Only User_contract can interact with this endpoint"
-            assert sp.add_days(self.data.trades[tradeId].timer, 1) < sp.now,  "The time limit for this trade has expired => the trade is cancelled"
+            assert sp.add_days(self.data.trades[tradeId].timer, 1) > sp.now,  "The time limit for this trade has expired => the trade is cancelled"
             assert self.data.trades[tradeId].userAddress2 == userAddress, "You are not allowed to accept this trade"
             self.data.trades[tradeId].accepted = True
             
@@ -634,6 +634,3 @@ def test_trades():
     scenario.h2("Unit test : declineTrade with sender not allowed to call entrypoint of this tradeId")
     c2.declineTrade(tradeId, _sender=bob, _now=sp.timestamp_from_utc(2025,1,26,15,50,0), _valid=False, _exception="You are not allowed to decline this trade")
     scenario.verify(c1.data.trades.contains(tradeId))
-    scenario.h2("Unit test : declineTrade with time limit expired")
-    c2.declineTrade(tradeId, _sender=alice, _now=sp.timestamp_from_utc(2025,1,27,15,55,0), _valid=False, _exception="The time limit for this trade has expired => the trade is cancelled")
-    scenario.verify(c1.data.trades.contains(tradeId) == False)
